@@ -10,7 +10,9 @@ parser.add_argument('--leave', default='holidays.txt', help="Path to holidays fi
 parser.add_argument('--hours', type=float, default=7.0, help="number of usable hours in a workday (after breaks) [7]")
 parser.add_argument('--eofy', type=int, default=6, help="End month of FY [6]")
 parser.add_argument('--html', default=None, help="Generate html code instead of printed output and store in file")
-parser.add_argument('--region', default="WGN", help="Holiday region [WGN] (AUK/CAN/OTA/...)")
+parser.add_argument('--country', default="NZ", help="Country code [NZ]")
+parser.add_argument('--prov', default="WGN", help="Holiday region/provence code [WGN] (AUK/CAN/OTA/...)")
+parser.add_argument('--state', default=None, help="State code [None]")
 
 args = parser.parse_args()
 
@@ -44,8 +46,6 @@ if args.date is not None:
 else:
     start = datetime.now()
 
-#todays_hours = min(7, max(0, 17 - max(start.hour, 9)))
-
 sy, sm, sd = start.year, start.month, start.day
 ed = calendar.monthrange(sy, sm)[1]
 
@@ -62,12 +62,12 @@ busdays_in_fy = [d for d in busdays_in_fy if d.weekday() < 5]
 
 months_in_fy = list(set(d.month for d in busdays_in_fy))
 
-output("Getting stat holidays for: " + args.region)
-leave = [datetime.fromordinal(d.toordinal()) for d in holidays.NZ(years=years , prov=args.region)]
+output(f"Getting stat holidays for: {args.prov} ({args.country})")
+leave = [datetime.fromordinal(d.toordinal()) for d in holidays.CountryHoliday(args.country, prov=args.prov, state=args.state, years=years)]
 leave = [d for d in leave if d >= start and d <= eofy]
 
 if os.path.exists(args.leave):
-    output("Adding leave from " + args.leave)
+    output(f"Adding leave from {args.leave}")
     for line in open(args.leave):
         if line[0] == '#':
             continue
@@ -91,7 +91,7 @@ if os.path.exists(args.leave):
         leave += [d for d in dates if d >= start and d <= eofy]
 
 else:
-    output("Not counting leave days (please add file at: " + args.leave + ")")
+    output(f"Not counting leave days (please add file at: {args.leave})")
 
 holiday_days = [d for d in leave if d in busdays_in_fy] # need to do this to discount 'leave' days that cover weekends (can happen with ranges)
 working_days = [d for d in busdays_in_fy if d not in holiday_days]
