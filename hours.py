@@ -60,7 +60,8 @@ years = [sy, ] + ([eofy_y,] if eofy_y > sy else [])
 busdays_in_fy = (start + timedelta(days=i) for i in range((eofy - start).days + 1))
 busdays_in_fy = [d for d in busdays_in_fy if d.weekday() < 5]
 
-months_in_fy = list(set(d.month for d in busdays_in_fy))
+months_in_fy = [i % 12 + 1 for i in range(sm-1, eofy_m + 12 * (sm > eofy_m))]
+#months_in_fy = list(set(d.month for d in busdays_in_fy))
 
 output(f"Getting stat holidays for: {args.prov} ({args.country})")
 leave = [datetime.fromordinal(d.toordinal()) for d in holidays.CountryHoliday(args.country, prov=args.prov, state=args.state, years=years)]
