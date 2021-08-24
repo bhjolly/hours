@@ -13,6 +13,7 @@ parser.add_argument('--html', default=None, help="Generate html code instead of 
 parser.add_argument('--country', default="NZ", help="Country code [NZ]")
 parser.add_argument('--prov', default="WGN", help="Holiday region/provence code [WGN] (AUK/CAN/OTA/...)")
 parser.add_argument('--state', default=None, help="State code [None]")
+parser.add_argument('--wait', action='store_true', help='Wait for user input before exiting (useful for Windows shortcuts)')
 
 args = parser.parse_args()
 
@@ -67,6 +68,8 @@ output(f"Getting stat holidays for: {args.prov} ({args.country})")
 leave = [datetime.fromordinal(d.toordinal()) for d in holidays.CountryHoliday(args.country, prov=args.prov, state=args.state, years=years)]
 leave = [d for d in leave if d >= start and d <= eofy]
 
+args.leave = os.path.abspath(args.leave)
+
 if os.path.exists(args.leave):
     output(f"Adding leave from {args.leave}")
     for line in open(args.leave):
@@ -113,3 +116,6 @@ output(fmt.format("FY", nhols_fy, nwork_fy, nwork_fy * args.hours))
 if args.html is not None:
     handle.write("</pre></body></html>")
     handle.close()
+
+if args.wait:
+    input("Done, press enter to finish")
