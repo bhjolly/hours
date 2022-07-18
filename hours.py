@@ -5,9 +5,11 @@ from datetime import datetime, timedelta, date
 import holidays
 import os, sys, argparse, calendar
 
+from pathlib import Path
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--date', default=None, help="Date to calculate from (YYYY-MM-DD) [today]")
-parser.add_argument('--leave', default='holidays.txt', help="Path to holidays file [holidays.txt]")
+parser.add_argument('--date', default=None, help="Date to calculate from (YYYY-MM-DD) [first day of this month]")
+parser.add_argument('--leave', type=Path, default='holidays.txt', help="Path to holidays file [holidays.txt]")
 parser.add_argument('--hours', type=float, default=7.0, help="number of usable hours in a workday (after breaks) [7]")
 parser.add_argument('--eofy', type=int, default=6, help="End month of FY [6]")
 parser.add_argument('--html', default=None, help="Generate html code instead of printed output and store in file")
@@ -15,6 +17,8 @@ parser.add_argument('--country', default="NZ", help="Country code [NZ]")
 parser.add_argument('--prov', default="WGN", help="Holiday region/provence code [WGN] (AUK/CAN/OTA/...)")
 parser.add_argument('--state', default=None, help="State code [None]")
 parser.add_argument('--wait', action='store_true', help='Wait for user input before exiting (useful for Windows shortcuts)')
+parser.add_argument('--noleave', action='store_true', help='do not read holidays.txt file (but still count stats)')
+
 
 args = parser.parse_args()
 
@@ -47,6 +51,7 @@ if args.date is not None:
     start = datetime.strptime(args.date, '%Y-%m-%d')
 else:
     start = datetime.now()
+    start = datetime(start.year, start.month, 1)
 
 sy, sm, sd = start.year, start.month, start.day
 ed = calendar.monthrange(sy, sm)[1]
@@ -54,7 +59,7 @@ ed = calendar.monthrange(sy, sm)[1]
 eofy_y, eofy_m = sy + (1 if sm > args.eofy else 0), args.eofy
 eofy_d = calendar.monthrange(eofy_y, eofy_m)[1]
 
-start = datetime(sy, sm, sd)
+#start = datetime(sy, sm, sd)
 eofy = datetime(eofy_y, eofy_m, eofy_d)
 
 years = [sy, ] + ([eofy_y,] if eofy_y > sy else [])
@@ -69,9 +74,11 @@ output(f"Getting stat holidays for: {args.prov} ({args.country})")
 leave = [datetime.fromordinal(d.toordinal()) for d in holidays.CountryHoliday(args.country, prov=args.prov, state=args.state, years=years)]
 leave = [d for d in leave if d >= start and d <= eofy]
 
-args.leave = os.path.abspath(args.leave)
+if not args.leave.exists():
+    args.leave = Path.home() / 'holidays.txt'
 
-if os.path.exists(args.leave):
+
+if args.leave.exists() and not args.noleave:
     output(f"Adding leave from {args.leave}")
     for line in open(args.leave):
         if line[0] == '#':
@@ -80,6 +87,7 @@ if os.path.exists(args.leave):
         if len(line) == 0:
             continue
         dates = []
+        line = line.replace(' - ', ' to ')
         if ' to ' in line:
             dates = line.split(' to ')
             assert len(dates) == 2, "Date ranges must consist of two dates separated by 'to' (ie: 2017-12-24 to 2018-01-10)"
@@ -96,7 +104,7 @@ if os.path.exists(args.leave):
         leave += [d for d in dates if d >= start and d <= eofy]
 
 else:
-    output(f"Not counting leave days (please add file at: {args.leave})")
+    output(f"Not counting leave days {'(--noleave set)' if args.noleave else f'(please add file at: {args.leave})'}")
 
 holiday_days = [d for d in leave if d in busdays_in_fy] # need to do this to discount 'leave' days that cover weekends (can happen with ranges)
 working_days = [d for d in busdays_in_fy if d not in holiday_days]
