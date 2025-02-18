@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from datetime import datetime, timedelta, date
 import holidays
+import re
 import os, sys, calendar
 
 from pathlib import Path
@@ -21,7 +22,7 @@ def get_holidays(leave_file, country, provence, start, eofy, noleave=False):
     years = list(set([start.year, eofy.year]))
     stat_days = [datetime.fromordinal(d.toordinal()) for d in holidays.CountryHoliday(country, prov=provence, state=args.state, years=years)]
     #leave = [d for d in leave if d >= start and d <= eofy]
-    leave_days = []
+    leave_days = dict()
     # print(stat_days)
     if not leave_file.exists():
         leave_file = Path.home() / 'holidays.txt'
@@ -35,21 +36,31 @@ def get_holidays(leave_file, country, provence, start, eofy, noleave=False):
             if len(line) == 0:
                 continue
             dates = []
-            line = line.replace(' - ', ' to ')
-            if ' to ' in line:
-                dates = line.split(' to ')
-                assert len(dates) == 2, "Date ranges must consist of two dates separated by 'to' (ie: 2017-12-24 to 2018-01-10)"
-                dates = [datetime.strptime(date, '%Y-%m-%d') for date in dates]
-                dates = [dates[0] + timedelta(days=i) for i in range((dates[1] - dates[0]).days + 1)]
-            elif ',' in line:
-                dates = line.split(',')
-                begin = dates[0].split('-')
-                dates = [dates[0], ] + ['-'.join(begin[:2] + [x, ]) for x in dates[1:]]
-                dates = [datetime.strptime(d, '%Y-%m-%d') for d in dates]
-            else:
-                dates = [datetime.strptime(line, '%Y-%m-%d')]
 
-            leave_days += [d for d in dates if d >= start and d <= eofy]
+            fte = 1
+            fte_set = False
+            for ftestr in re.findall(r'\s*\*\s*([\d\.]+)', line):
+                assert not fte_set, "can only set FTE once per line"
+                fte = float(ftestr)
+                fte_set = True
+                line = re.sub(r'\s*\*\s*[\d\.]+', '', line)
+
+            parts = re.split('( to )|( - )', line)
+            if len(parts) > 1:
+                assert len(parts) == 4, "Date ranges must consist of two dates separated by 'to' (ie: 2017-12-24 to 2018-01-10)"
+                dates = [datetime.strptime(date, '%Y-%m-%d') for date in parts[0::3]]
+                dates = [dates[0] + timedelta(days=i) for i in range((dates[1] - dates[0]).days + 1)]
+            else:
+                parts = re.split('\s*,\s*', line)
+                if len(parts) > 1:
+                    begin = parts[0].split('-')
+                    dates = [parts[0], ] + ['-'.join(begin[:2] + [x, ]) for x in parts[1:]]
+                    dates = [datetime.strptime(d, '%Y-%m-%d') for d in dates]
+                else:
+                    dates = [datetime.strptime(line, '%Y-%m-%d')]
+
+            for date in [d for d in dates if d >= start and d <= eofy]:
+                leave_days[date] = fte 
 
     else:
         output(f"Not counting leave days {'(--noleave set)' if noleave else f'(please add file at: {leave_file})'}")
@@ -111,15 +122,18 @@ def summarise(leave_file, country, provence, start, eofy, workdays, workhours, w
         if day in stats_in_fy:
             stat_days.append((day, hours))
         elif day in leave_in_fy:
-            leave_days.append((day, hours))
+            fte = leave_in_fy[day]
+            leave_days.append((day, fte * hours))
+            if fte < 1:
+                working_days.append((day, hours * (1 - fte)))
         else:
             working_days.append((day, hours))
 
     # nhols_fy = len(busdays_in_fy) - len(working_days)
     # nwork_fy = len(working_days)
     output("Start day: {0} at 08:00...".format(start.strftime('%Y-%m-%d')))
-    fmt = "{0:9} {1:7d} {2:7d} {3:7d} {4:7.0f}"
-    output("{0:9} {1:7} {2:7} {3:7} {4:7}".format("Month", "Stats", "Leave", "Bus.Day", "Chg Hrs"))
+    fmt = "{0:9} {1:7d} {2:7d} {3:7d} {4:7.0f} {5:7.0f}"
+    output("{0:9} {1:7} {2:7} {3:7} {4:7} {5:7}".format("Month", "Stats", "Leave", "Bus.Day", "Leave Hrs", "Chg Hrs"))
     hols_fy, lve_fy, wrk_fy = [], [], []
     for month in months_in_fy:
         str_month = calendar.month_name[month]
@@ -131,9 +145,9 @@ def summarise(leave_file, country, provence, start, eofy, workdays, workhours, w
         lve_fy += lve_mth
         wrk_fy += wrk_mth
 
-        output(fmt.format(str_month, len(hols_mth), len(lve_mth), len(wrk_mth), sum(wrk_mth)))
+        output(fmt.format(str_month, len(hols_mth), len(lve_mth), len(wrk_mth), sum(lve_mth), sum(wrk_mth)))
 
-    output(fmt.format("FY", len(hols_fy), len(lve_fy), len(wrk_fy), sum(wrk_fy)))
+    output(fmt.format("FY", len(hols_fy), len(lve_fy), len(wrk_fy), sum(lve_fy), sum(wrk_fy)))
 
 if __name__ == "__main__":
     import argparse
