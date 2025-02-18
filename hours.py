@@ -1,130 +1,194 @@
 #!/usr/bin/env python3
-
-
 from datetime import datetime, timedelta, date
 import holidays
-import os, sys, argparse, calendar
+import os, sys, calendar
 
 from pathlib import Path
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--date', default=None, help="Date to calculate from (YYYY-MM-DD) [first day of this month]")
-parser.add_argument('--leave', type=Path, default='holidays.txt', help="Path to holidays file [holidays.txt]")
-parser.add_argument('--hours', type=float, default=7.0, help="number of usable hours in a workday (after breaks) [7]")
-parser.add_argument('--eofy', type=int, default=6, help="End month of FY [6]")
-parser.add_argument('--html', default=None, help="Generate html code instead of printed output and store in file")
-parser.add_argument('--country', default="NZ", help="Country code [NZ]")
-parser.add_argument('--prov', default="WGN", help="Holiday region/provence code [WGN] (AUK/CAN/OTA/...)")
-parser.add_argument('--state', default=None, help="State code [None]")
-parser.add_argument('--wait', action='store_true', help='Wait for user input before exiting (useful for Windows shortcuts)')
-parser.add_argument('--noleave', action='store_true', help='do not read holidays.txt file (but still count stats)')
-
-
-args = parser.parse_args()
-
 handle = None
-if args.html is not None:
-    handle = open(args.html, 'w')
-    handle.write('''<!DOCTYPE html>
-<html lang="en">
-    <head>
-      <meta charset="utf-8">
-      <title>Ben's Leave Calculator</title>
-      <link rel="stylesheet" href="style.css">
-      <script src="script.js"></script>
-    </head>
-    <body>
-<pre>
-
-
-''')
-
+suppress_output = False
 
 def output(string):
-    global handle
-    if handle is not None:
-        handle.write(string + '\n')
-    else:
-        print(string)
-
-if args.date is not None:
-    start = datetime.strptime(args.date, '%Y-%m-%d')
-else:
-    start = datetime.now()
-    start = datetime(start.year, start.month, 1)
-
-sy, sm, sd = start.year, start.month, start.day
-ed = calendar.monthrange(sy, sm)[1]
-
-eofy_y, eofy_m = sy + (1 if sm > args.eofy else 0), args.eofy
-eofy_d = calendar.monthrange(eofy_y, eofy_m)[1]
-
-#start = datetime(sy, sm, sd)
-eofy = datetime(eofy_y, eofy_m, eofy_d)
-
-years = [sy, ] + ([eofy_y,] if eofy_y > sy else [])
-
-busdays_in_fy = (start + timedelta(days=i) for i in range((eofy - start).days + 1))
-busdays_in_fy = [d for d in busdays_in_fy if d.weekday() < 5]
-
-months_in_fy = [i % 12 + 1 for i in range(sm-1, eofy_m + 12 * (sm > eofy_m))]
-#months_in_fy = list(set(d.month for d in busdays_in_fy))
-
-output(f"Getting stat holidays for: {args.prov} ({args.country})")
-leave = [datetime.fromordinal(d.toordinal()) for d in holidays.CountryHoliday(args.country, prov=args.prov, state=args.state, years=years)]
-leave = [d for d in leave if d >= start and d <= eofy]
-
-if not args.leave.exists():
-    args.leave = Path.home() / 'holidays.txt'
-
-
-if args.leave.exists() and not args.noleave:
-    output(f"Adding leave from {args.leave}")
-    for line in open(args.leave):
-        if line[0] == '#':
-            continue
-        line = line.strip()
-        if len(line) == 0:
-            continue
-        dates = []
-        line = line.replace(' - ', ' to ')
-        if ' to ' in line:
-            dates = line.split(' to ')
-            assert len(dates) == 2, "Date ranges must consist of two dates separated by 'to' (ie: 2017-12-24 to 2018-01-10)"
-            dates = [datetime.strptime(date, '%Y-%m-%d') for date in dates]
-            dates = [dates[0] + timedelta(days=i) for i in range((dates[1] - dates[0]).days + 1)]
-        elif ',' in line:
-            dates = line.split(',')
-            begin = dates[0].split('-')
-            dates = [dates[0], ] + ['-'.join(begin[:2] + [x, ]) for x in dates[1:]]
-            dates = [datetime.strptime(d, '%Y-%m-%d') for d in dates]
+    global handle, suppress_output
+    if not suppress_output:
+        if handle is not None:
+            handle.write(string + '\n')
         else:
-            dates = [datetime.strptime(line, '%Y-%m-%d')]
+            print(string)
 
-        leave += [d for d in dates if d >= start and d <= eofy]
+def get_holidays(leave_file, country, provence, start, eofy, noleave=False):
+    output(f"Getting stat holidays for: {provence} ({country})")
+    years = list(set([start.year, eofy.year]))
+    stat_days = [datetime.fromordinal(d.toordinal()) for d in holidays.CountryHoliday(country, prov=provence, state=args.state, years=years)]
+    #leave = [d for d in leave if d >= start and d <= eofy]
+    leave_days = []
+    # print(stat_days)
+    if not leave_file.exists():
+        leave_file = Path.home() / 'holidays.txt'
 
-else:
-    output(f"Not counting leave days {'(--noleave set)' if args.noleave else f'(please add file at: {args.leave})'}")
+    if leave_file.exists() and not noleave:
+        output(f"Adding leave from {leave_file}")
+        for line in open(leave_file):
+            if line[0] == '#':
+                continue
+            line = line.strip()
+            if len(line) == 0:
+                continue
+            dates = []
+            line = line.replace(' - ', ' to ')
+            if ' to ' in line:
+                dates = line.split(' to ')
+                assert len(dates) == 2, "Date ranges must consist of two dates separated by 'to' (ie: 2017-12-24 to 2018-01-10)"
+                dates = [datetime.strptime(date, '%Y-%m-%d') for date in dates]
+                dates = [dates[0] + timedelta(days=i) for i in range((dates[1] - dates[0]).days + 1)]
+            elif ',' in line:
+                dates = line.split(',')
+                begin = dates[0].split('-')
+                dates = [dates[0], ] + ['-'.join(begin[:2] + [x, ]) for x in dates[1:]]
+                dates = [datetime.strptime(d, '%Y-%m-%d') for d in dates]
+            else:
+                dates = [datetime.strptime(line, '%Y-%m-%d')]
 
-holiday_days = [d for d in leave if d in busdays_in_fy] # need to do this to discount 'leave' days that cover weekends (can happen with ranges)
-working_days = [d for d in busdays_in_fy if d not in holiday_days]
+            leave_days += [d for d in dates if d >= start and d <= eofy]
 
-nhols_fy = len(busdays_in_fy) - len(working_days)
-nwork_fy = len(working_days)
-output("Start day: {0} at 08:00...".format(start.strftime('%Y-%m-%d')))
-fmt = "{0:9} {1:7d} {2:7d} {3:7.0f}"
-output("{0:9} {1:7} {2:7} {3:7}".format("Month", "H.day", "W.day", "Chg Hrs"))
-for month in months_in_fy:
-    str_month = calendar.month_name[month]
-    nhols_month = len([d for d in holiday_days if d.month == month])
-    nwork_month = len([d for d in working_days if d.month == month])
-    output(fmt.format(str_month, nhols_month, nwork_month, nwork_month * args.hours))
+    else:
+        output(f"Not counting leave days {'(--noleave set)' if noleave else f'(please add file at: {leave_file})'}")
 
-output(fmt.format("FY", nhols_fy, nwork_fy, nwork_fy * args.hours))
+    return stat_days, leave_days
 
-if args.html is not None:
-    handle.write("</pre></body></html>")
-    handle.close()
+def get_workdaysinfy(start, workdays, workhours, eofy, workdaysbegin=None):
 
-if args.wait:
-    input("Done, press enter to finish")
+    workdays = [x[:3].lower() for x in workdays]
+    if type(workhours) is not list:
+        workhours = list(workhours)
+    if len(workhours) == 1:
+        workhours *= len(workdays)
+    workdaysset = list(set(workdays))
+    daysofweek = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+    nweeks = max(workdays.count(dow) for dow in daysofweek)
+    cycle = [False,] * 7 * nweeks
+    cycle_hours = [0,] * 7 * nweeks
+    prevday = -1
+    week = 0
+    for day, hours in zip(workdays, workhours):
+        i = daysofweek.index(day)
+        if i < prevday:
+            week += 1
+        prevday = i
+        cycle[i + week*7] = True
+        cycle_hours[i + week*7] = hours
+    print(cycle)
+    cyclelen = 7 * nweeks
+    
+    if workdaysbegin is None:
+        workdaysbegin = start - timedelta(days=start.weekday()*-1)
+
+    if workdaysbegin < start - timedelta(days=cyclelen):
+        offset = (start - workdaysbegin).days % cyclelen
+        workdaysbegin = start - timedelta(days=offset)
+    elif workdaysbegin > start:
+        offset = (workdaysbegin - start).days % cyclelen
+        workdaysbegin = start - timedelta(days=offset)
+    days_in_fy = (workdaysbegin + timedelta(days=i) for i in range((eofy - workdaysbegin).days + 1))
+    # else:
+    #     days_in_fy = (start + timedelta(days=i) for i in range((eofy - start).days + 1))
+
+    months_in_fy = [i % 12 + 1 for i in range(sm-1, eofy.month + 12 * (sm > eofy.month))]
+    days_in_fy = [(day, cycle_hours[i % cyclelen]) for i, day in enumerate(days_in_fy) if day >= start and cycle[i % cyclelen]]
+    return days_in_fy, months_in_fy
+
+def summarise(leave_file, country, provence, start, eofy, workdays, workhours, workdaysbegin=None, noleave=False):
+
+    stats_in_fy, leave_in_fy = get_holidays(leave_file, country, provence, start, eofy, noleave=noleave)
+    workdays_in_fy, months_in_fy = get_workdaysinfy(start, workdays, workhours, eofy, workdaysbegin=workdaysbegin)
+    
+    working_days = []
+    stat_days, leave_days = [], []
+
+    for day, hours in workdays_in_fy:
+        
+        if day in stats_in_fy:
+            stat_days.append((day, hours))
+        elif day in leave_in_fy:
+            leave_days.append((day, hours))
+        else:
+            working_days.append((day, hours))
+
+    # nhols_fy = len(busdays_in_fy) - len(working_days)
+    # nwork_fy = len(working_days)
+    output("Start day: {0} at 08:00...".format(start.strftime('%Y-%m-%d')))
+    fmt = "{0:9} {1:7d} {2:7d} {3:7d} {4:7.0f}"
+    output("{0:9} {1:7} {2:7} {3:7} {4:7}".format("Month", "Stats", "Leave", "Bus.Day", "Chg Hrs"))
+    hols_fy, lve_fy, wrk_fy = [], [], []
+    for month in months_in_fy:
+        str_month = calendar.month_name[month]
+        hols_mth = [hours for day, hours in stat_days if day.month == month]
+        lve_mth = [hours for day, hours in leave_days if day.month == month]
+        wrk_mth = [hours for day, hours in working_days if day.month == month]
+        # print(month, [day for day, hours in stat_days if day.month == month])
+        hols_fy += hols_mth
+        lve_fy += lve_mth
+        wrk_fy += wrk_mth
+
+        output(fmt.format(str_month, len(hols_mth), len(lve_mth), len(wrk_mth), sum(wrk_mth)))
+
+    output(fmt.format("FY", len(hols_fy), len(lve_fy), len(wrk_fy), sum(wrk_fy)))
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--date', default=None, help="Date to calculate from (YYYY-MM-DD) [first day of this month]")
+    parser.add_argument('--leave', type=Path, default='holidays.txt', help="Path to holidays file [holidays.txt]")
+    #parser.add_argument('--hours', type=float, default=7.0, nargs='+', help="Chargeable hours in a workday (after breaks) [7], can take a list of len(workdays) if you want")
+    parser.add_argument('--eofy', type=int, default=6, help="End month of FY [6]")
+    parser.add_argument('--html', default=None, help="Generate html code instead of printed output and store in file")
+    parser.add_argument('--country', default="NZ", help="Country code [NZ]")
+    parser.add_argument('--prov', default="WGN", help="Holiday region/provence code [WGN] (AUK/CAN/OTA/...)")
+    parser.add_argument('--state', default=None, help="State code [None]")
+    parser.add_argument('--wait', action='store_true', help='Wait for user input before exiting (useful for Windows shortcuts)')
+    parser.add_argument('--noleave', action='store_true', help='do not read holidays.txt file (but still count stats)')
+    parser.add_argument('--workdays', nargs='+', type=str, default=['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], help='Days that you work [Mon Tue Wed Thu Fri], can stretch more than 1 week if you work 9 day fortnights')
+    parser.add_argument('--workhours', nargs='+', type=float, default=[7., ], help='Hours worked per day in workdays [7.0], can be a single value or a list the same length as --workdays')
+    parser.add_argument('--workdaysbegin', type=datetime, default=None, help='If --workdays covers more than 1 week (ie 1 day off/fortnight), put a date here that represent the start of a cycle')
+
+    args = parser.parse_args()
+
+    if args.html is not None:
+        handle = open(args.html, 'w')
+        handle.write('''<!DOCTYPE html>
+    <html lang="en">
+        <head>
+        <meta charset="utf-8">
+        <title>Ben's Leave Calculator</title>
+        <link rel="stylesheet" href="style.css">
+        <script src="script.js"></script>
+        </head>
+        <body>
+    <pre>
+
+
+    ''')
+    
+    if args.date is not None:
+        start = datetime.strptime(args.date, '%Y-%m-%d')
+    else:
+        start = datetime.now()
+        start = datetime(start.year, start.month, 1)
+    sy, sm, sd = start.year, start.month, start.day
+    # ed = calendar.monthrange(sy, sm)[1]
+
+    eofy_y = sy + (1 if sm > args.eofy else 0)
+    eofy_d = calendar.monthrange(eofy_y, args.eofy)[1]
+
+    #start = datetime(sy, sm, sd)
+    eofy = datetime(eofy_y, args.eofy, eofy_d)
+
+    summarise(args.leave, args.country, args.prov, start, eofy, args.workdays, args.workhours, workdaysbegin=args.workdaysbegin, noleave=args.noleave)
+
+    if args.html is not None:
+        handle.write("</pre></body></html>")
+        handle.close()
+
+    if args.wait:
+        input("Done, press enter to finish")
