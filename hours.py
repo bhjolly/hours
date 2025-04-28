@@ -51,7 +51,7 @@ def get_holidays(leave_file, country, provence, start, eofy, noleave=False):
                 dates = [datetime.strptime(date, '%Y-%m-%d') for date in parts[0::3]]
                 dates = [dates[0] + timedelta(days=i) for i in range((dates[1] - dates[0]).days + 1)]
             else:
-                parts = re.split('\s*,\s*', line)
+                parts = re.split(r'\s*,\s*', line)
                 if len(parts) > 1:
                     begin = parts[0].split('-')
                     dates = [parts[0], ] + ['-'.join(begin[:2] + [x, ]) for x in parts[1:]]
